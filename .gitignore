@@ -1,0 +1,5 @@
+data_files/embeddings/*
+models/*
+outputs/*
+
+.DS_Store

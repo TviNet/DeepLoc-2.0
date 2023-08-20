@@ -1,0 +1,8 @@
+global:
+  sequences_file: deeploc_hpa_clipped1k.fasta
+  prefix: esm1b_hpa
+esm1b_embeddings:
+  type: embed
+  protocol: esm1b
+  # Stores embeddings in fp16 instead of fp32 (half the storage)
+  half_precision: True

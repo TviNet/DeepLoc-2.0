@@ -1,0 +1,10 @@
+global:
+  sequences_file: deeploc_swissprot_clipped4k.fasta
+  prefix: embeddings/prott5_swissprot
+t5_embeddings:
+  type: embed
+  protocol: prottrans_t5_xl_u50
+  # Uses fp16 instead of fp32 weights (twice as fast)
+  half_precision_model: True
+  # Stores embeddings in fp16 instead of fp32 (half the storage)
+  half_precision: True
