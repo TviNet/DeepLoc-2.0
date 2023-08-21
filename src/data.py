@@ -3,7 +3,7 @@ import torch
 from Bio import SeqIO
 import re
 import pandas as pd
-
+import time 
 class FastaBatchedDatasetTorch(torch.utils.data.Dataset):
     def __init__(self, data_df):
         self.data_df = data_df
@@ -138,7 +138,7 @@ def get_swissprot_df(clip_len):
     with open(SIGNAL_DATA, "rb") as f:
         annot_df = pickle5.load(f)
     nes_exclude_list = ['Q7TPV4','P47973','P38398','P38861','Q16665','O15392','Q9Y8G3','O14746','P13350','Q06142']
-    swissprot_exclusion_list = ['Q04656-5   ','O43157','Q9UPN3-2']
+    swissprot_exclusion_list = ['Q04656-5','O43157','Q9UPN3-2']
     def clip_middle_np(x):
         if len(x)>clip_len:
             x = np.concatenate((x[:clip_len//2],x[-clip_len//2:]), axis=0)
@@ -166,6 +166,57 @@ def get_swissprot_df(clip_len):
 
     return data_df
 
+def convert_to_binary(x):
+    types_binary = np.zeros((len(SS_CATEGORIES)-1,))
+    for c in x.split("_"):
+      types_binary[SS_CATEGORIES.index(c)-1] = 1
+    return types_binary
+
+def get_swissprot_ss_Xy(clip_len):
+    with open(SIGNAL_DATA, "rb") as f:
+        annot_df = pickle5.load(f)
+    nes_exclude_list = ['Q7TPV4','P47973','P38398','P38861','Q16665','O15392','Q9Y8G3','O14746','P13350','Q06142']
+    swissprot_exclusion_list = ['Q04656-5','O43157','Q9UPN3-2']
+    def clip_middle_np(x):
+        if len(x)>clip_len:
+            x = np.concatenate((x[:clip_len//2],x[-clip_len//2:]), axis=0)
+        return x
+    def clip_middle(x):
+      if len(x)>clip_len:
+          x = x[:clip_len//2] + x[-clip_len//2:]
+      return x
+    
+    train_annot_pred_df = pd.DataFrame()#pd.read_pickle(f"outputs_prott5/inner_{i}_1Layer.pkl")
+    test_annot_pred_df = pd.DataFrame()#pd.read_pickle(f"outputs_prott5/{i}_1Layer.pkl")
+    assert train_annot_pred_df.merge(test_annot_pred_df, on="ACC").empty == True
+
+    
+    filt_annot_df = annot_df[annot_df["Types"]!=""].reset_index(drop=True)
+    seq_df = filt_annot_df.merge(train_annot_pred_df)
+    seq_df["Sequence"] = seq_df["Sequence"].apply(lambda x: clip_middle(x))
+    seq_df["Target"] = seq_df[CATEGORIES].values.tolist()
+    seq_df["TargetSignal"] = seq_df["Types"].apply(lambda x: convert_to_binary(x))
+
+    annot_true_df = seq_df
+    X_true_train, y_true_train = np.concatenate((np.stack(annot_true_df["embeds"].to_numpy()), np.stack(annot_true_df["Target"].to_numpy())), axis=1) , np.stack(annot_true_df["TargetSignal"].to_numpy())
+    annot_pred_df = seq_df
+    X_pred_target = np.stack(annot_true_df["preds"].to_numpy())# > threshold_dict[f"{i}_multidct"]
+    X_pred_train, y_pred_train = np.concatenate((np.stack(annot_pred_df["embeds"].to_numpy()), X_pred_target), axis=1), np.stack(annot_pred_df["TargetSignal"].to_numpy())
+
+    seq_df = filt_annot_df.merge(test_annot_pred_df)
+    seq_df["Sequence"] = seq_df["Sequence"].apply(lambda x: clip_middle(x))
+    seq_df["Target"] = seq_df[CATEGORIES].values.tolist()
+    seq_df["TargetSignal"] = seq_df["Types"].apply(lambda x: convert_to_binary(x))
+
+    annot_test_df = seq_df
+    X_test_target = np.stack(annot_test_df["preds"].to_numpy())# > threshold_dict[f"{i}_multidct"]
+    X_test, y_test = np.concatenate((np.stack(annot_test_df["embeds"].to_numpy()), X_test_target), axis=1), np.stack(annot_test_df["TargetSignal"].to_numpy())
+    
+    X_train = np.concatenate((X_true_train, X_pred_train), axis=0)
+    y_train = np.concatenate((y_true_train, y_pred_train), axis=0)
+    print(X_train.shape, X_test.shape)
+
+
 class EmbeddingsLocalizationDataset(torch.utils.data.Dataset):
     """
     Dataset of protein embeddings and the corresponding subcellular localization label.
@@ -174,11 +225,10 @@ class EmbeddingsLocalizationDataset(torch.utils.data.Dataset):
     def __init__(self, embedding_file, data_df) -> None:
         super().__init__()
         self.data_df = data_df
-        self.embeddings_file = h5py.File(embedding_file, "r")
+        self.embeddings_file = embedding_file
     
     def __getitem__(self, index: int):
-        embedding = self.embeddings_file[self.data_df["ACC"][index]]
-        print(self.data_df["ACC"][index], embedding.shape, len(self.data_df["Sequence"][index]))
+        embedding = np.array(self.embeddings_file[self.data_df["ACC"][index]]).copy()
         return self.data_df["Sequence"][index], embedding, self.data_df["Target"][index], self.data_df["TargetAnnot"][index], self.data_df["ACC"][index]
     
     def get_batch_indices(self, toks_per_batch, max_batch_size, extra_toks_per_seq=0):
@@ -218,13 +268,14 @@ class TrainBatchConverter(object):
     processed (labels + tensor) batch.
     """
 
-    def __init__(self, alphabet):
+    def __init__(self, alphabet, embed_len):
         self.alphabet = alphabet
+        self.embed_len = embed_len
 
     def __call__(self, raw_batch):
         batch_size = len(raw_batch)
         max_len = max(len(seq_str) for seq_str, _, _, _, _ in raw_batch)
-        embedding_tensor = torch.zeros((batch_size, max_len, 1280), dtype=torch.float32)
+        embedding_tensor = torch.zeros((batch_size, max_len, self.embed_len), dtype=torch.float32)
         np_mask = torch.zeros((batch_size, max_len))
         target_annots = torch.zeros((batch_size, max_len), dtype=torch.int64)
         labels = []
@@ -237,14 +288,11 @@ class TrainBatchConverter(object):
             lengths.append(len(seq_str))
             strs.append(seq_str)
             targets[i] = torch.tensor(target)
-            print(len(seq_str), embedding.shape, targets[i].shape)
             embedding_tensor[i, :len(seq_str)] = torch.tensor(np.array(embedding))
             target_annots[i, :len(seq_str)] = torch.tensor(target_annot)
             np_mask[i, :len(seq_str)] = 1
         np_mask = np_mask == 1
         return embedding_tensor, torch.tensor(lengths), np_mask, targets, target_annots, labels
-
-
     
 class SignalTypeDataset(torch.utils.data.Dataset):
 
@@ -261,10 +309,11 @@ class SignalTypeDataset(torch.utils.data.Dataset):
 
 
 class DataloaderHandler:
-    def __init__(self, clip_len, alphabet, embedding_file) -> None:
+    def __init__(self, clip_len, alphabet, embedding_file, embed_len) -> None:
         self.clip_len = clip_len
         self.alphabet = alphabet
         self.embedding_file = embedding_file
+        self.embed_len = embed_len
 
     def get_train_val_dataloaders(self, outer_i):
         data_df = get_swissprot_df(self.clip_len)
@@ -280,14 +329,14 @@ class DataloaderHandler:
 
         # print(split_train_df[CATEGORIES].mean())
         # print(split_val_df[CATEGORIES].mean())
-        
-        train_dataset = EmbeddingsLocalizationDataset(self.embedding_file, split_train_df)
+        embedding_file = h5py.File(self.embedding_file, "r")
+        train_dataset = EmbeddingsLocalizationDataset(embedding_file, split_train_df)
         train_batches = train_dataset.get_batch_indices(4096*4, BATCH_SIZE, extra_toks_per_seq=0)
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, collate_fn=TrainBatchConverter(self.alphabet), batch_sampler=train_batches)
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, collate_fn=TrainBatchConverter(self.alphabet, self.embed_len), batch_sampler=train_batches)
 
-        val_dataset = EmbeddingsLocalizationDataset(self.embedding_file, split_val_df)
+        val_dataset = EmbeddingsLocalizationDataset(embedding_file, split_val_df)
         val_batches = val_dataset.get_batch_indices(4096*4, BATCH_SIZE, extra_toks_per_seq=0)
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, collate_fn=TrainBatchConverter(self.alphabet), batch_sampler=val_batches)
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, collate_fn=TrainBatchConverter(self.alphabet, self.embed_len), batch_sampler=val_batches)
         return train_dataloader, val_dataloader
 
     def get_partition(self, outer_i):

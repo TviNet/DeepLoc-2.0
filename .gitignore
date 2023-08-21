@@ -1,5 +1,8 @@
 data_files/embeddings/*
 models/*
 outputs/*
+src/__pycache__/*
 
 .DS_Store
+
+playground.ipynb

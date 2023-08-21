@@ -11,10 +11,9 @@ dependencies:
     - Bio
     - torch
     - onnxruntime>=1.7.0
-    - fair-esm
+    - fair-esm==0.4.0
     - transformers
     - pytorch_lightning
     - sentencepiece 
-    - bio-embeddings
     - pickle5
     - h5py

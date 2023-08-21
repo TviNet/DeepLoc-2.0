@@ -116,9 +116,7 @@ def place_tensor(tensor, input_tensor):
     Places a tensor on GPU, if PyTorch sees CUDA; otherwise, the returned tensor
     remains on CPU.
     """
-    if input_tensor.is_cuda:
-        return tensor.cuda()
-    return tensor
+    return tensor.to(input_tensor.device)
         
 def smooth_tensor_1d(input_tensor, smooth_sigma):
     """
@@ -140,7 +138,7 @@ def smooth_tensor_1d(input_tensor, smooth_sigma):
     base = np.zeros(1 + (2 * sigma))
     base[sigma] = 1  # Center of window is 1 everywhere else is 0
     kernel = scipy.ndimage.gaussian_filter(base, sigma=sigma, truncate=truncate)
-    kernel = place_tensor(torch.tensor(kernel), input_tensor)
+    kernel = torch.tensor(kernel, dtype=torch.float32, device=input_tensor.device)
 
     # Expand the input and kernel to 3D, with channels of 1
     # Also make the kernel float-type, as the input is going to be of type float

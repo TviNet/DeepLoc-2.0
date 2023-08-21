@@ -4,9 +4,15 @@ from src.data import *
 from src.utils import *
 from src.eval_utils import *
 from src.embedding import *
+from src.metrics import *
 import argparse
 import subprocess
 import os
+import warnings
+
+warnings.filterwarnings(
+    "ignore", ".*Trying to infer the `batch_size` from an ambiguous collection.*"
+)
 
 def train_model(model_attrs: ModelAttributes, datahandler:DataloaderHandler, outer_i: int):
     train_dataloader, val_dataloader = datahandler.get_train_val_dataloaders(outer_i)
@@ -58,17 +64,29 @@ if __name__ == "__main__":
         print("Embeddings not found, generating......")
         generate_embeddings(model_attrs)
         print("Embeddings created!")
+    else:
+        print("Using existing embeddings")
     
     if not os.path.exists(model_attrs.embedding_file):
         raise Exception("Embeddings could not be created. Verify that data_files/embeddings/<MODEL_DATASET> is deleted")
 
-    datahandler = DataloaderHandler(clip_len=model_attrs.clip_len, alphabet=model_attrs.alphabet, embedding_file=model_attrs.embedding_file)
+    datahandler = DataloaderHandler(
+        clip_len=model_attrs.clip_len, 
+        alphabet=model_attrs.alphabet, 
+        embedding_file=model_attrs.embedding_file,
+        embed_len=model_attrs.embed_len
+    )
     print("Training subcellular localization models")
     for i in range(0, 5):
         print(f"Training model {i+1} / 5")
-        train_model(model_attrs, datahandler, i)
+        if not os.path.exists(os.path.join(model_attrs.save_path, f"{i}_1Layer.ckpt")):
+            train_model(model_attrs, datahandler, i)
     print("Finished training subcellular localization models")
 
     print("Using trained models to generate outputs for training data")
     generate_outputs(model_attrs=model_attrs, datahandler=datahandler)
     print("Generated outputs! Can train sorting signal prediction now")
+
+
+    print("Computing subcellular localization performance on swissprot CV dataset")
+    calculate_sl_metrics(model_attrs=model_attrs, datahandler=datahandler)

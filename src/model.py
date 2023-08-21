@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from .attr_prior import *
 from src.constants import *
 
+
 pos_weights_bce = torch.tensor([1,1,1,3,2.3,4,9.5,4.5,6.6,7.7,32])
 def focal_loss(input, target, gamma=1):
     bceloss = F.binary_cross_entropy_with_logits(input, target, pos_weight=pos_weights_bce.to(input.device), reduction="none")
@@ -55,6 +56,7 @@ class BaseModel(pl.LightningModule):
         self.lin = nn.Linear(embed_dim, 256)
         self.attn_head = AttentionHead(256, 1)
         self.clf_head = nn.Linear(256, 11)
+        self.kld = nn.KLDivLoss(reduction="batchmean")
         self.lr = 1e-3
 
     def forward(self, embedding, lens, non_mask):
@@ -117,12 +119,8 @@ class BaseModel(pl.LightningModule):
         reg_loss, seq_loss, seq_count = self.attn_reg_loss(y, y_attns, y_tags, l, n)
         bce_loss = focal_loss(y_pred, y)
         loss = bce_loss + SUP_LOSS_MULT * seq_loss + REG_LOSS_MULT * reg_loss
-        self.log('train_loss_batch', loss)
+        self.log('train_loss_batch', loss, on_epoch=True)
         return {'loss': loss}
-
-    def on_train_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
-        self.log('train_loss', avg_loss, prog_bar=True)
 
     def validation_step(self, batch, batch_idx):
         #self.unfreeze()
@@ -131,19 +129,13 @@ class BaseModel(pl.LightningModule):
         reg_loss, seq_loss, seq_count = self.attn_reg_loss(y, y_attns, y_tags, l, n)
         bce_loss = focal_loss(y_pred, y)
         loss = bce_loss + SUP_LOSS_MULT * seq_loss + REG_LOSS_MULT * reg_loss
-        self.log('val_loss_batch', loss)
+        self.log('val_loss_batch', loss, on_epoch=True)
+        self.log('bce_loss', bce_loss, on_epoch=True)
         return {'loss': loss, 
                 'seq_loss': seq_loss,
                 'reg_loss': reg_loss,
                 'bce_loss': bce_loss,
                 'seq_count': seq_count}
-  
-    def on_val_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
-        self.log('val_loss', avg_loss, prog_bar=True)
-
-        avg_loss = torch.stack([x['bce_loss'] for x in outputs]).mean()
-        self.log('bce_loss', avg_loss, prog_bar=True)
     
 
 class ProtT5Frozen(BaseModel):

@@ -11,14 +11,16 @@ class ModelAttributes:
                  embedding_file: str, 
                  save_path: str,
                  outputs_save_path: str,
-                 clip_len: int) -> None:
+                 clip_len: int,
+                 embed_len: int) -> None:
         self.model_type = model_type
         self.class_type = class_type 
         self.alphabet = alphabet
         self.embedding_file = embedding_file
         self.save_path = save_path
-        self.outputs_save_path =outputs_save_path
+        self.outputs_save_path = outputs_save_path
         self.clip_len = clip_len
+        self.embed_len = embed_len
         
 
 def get_train_model_attributes(model_type):
@@ -32,7 +34,8 @@ def get_train_model_attributes(model_type):
             EMBEDDINGS[FAST]["embeds"],
             "models/models_esm1b",
             "outputs/esm1b/",
-            1022
+            1022,
+            1280
         )
     elif model_type == ACCURATE:
         alphabet = T5Tokenizer.from_pretrained("Rostlab/prot_t5_xl_uniref50", do_lower_case=False )
@@ -44,7 +47,8 @@ def get_train_model_attributes(model_type):
             EMBEDDINGS[ACCURATE]["embeds"],            
             "models/models_prott5",
             "outputs/prott5/",
-            4000
+            4000,
+            1024
         )
     else:
         raise Exception("wrong model type provided expected Fast,Accurate got", model_type)

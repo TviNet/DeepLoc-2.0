@@ -167,3 +167,5 @@ def generate_outputs(
 
     with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_sl_{thresh_type}.pkl"), "wb") as f:
         pickle.dump(threshold_dict, f)
+
+

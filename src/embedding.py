@@ -23,7 +23,7 @@ def embed_esm1b(embed_dataloader, out_file):
                 for i, (toks, lengths, np_mask, labels) in tqdm.tqdm(enumerate(embed_dataloader)):
                     embed = model(toks.to(device), repr_layers=[33])["representations"][33].float().cpu().numpy()
                     for j in range(len(labels)):
-                        embed_h5[labels[j]] = embed[j, 1:1+lengths[j]]
+                        embed_h5[labels[j]] = embed[j, 1:1+lengths[j]].astype(np.float16)
         embed_h5.close()
     except:
         os.system(f"rm {out_file}")
@@ -42,7 +42,7 @@ def embed_prott5(embed_dataloader, out_file):
                     attention_mask=torch.tensor(toks['attention_mask'], 
                         device=device)).last_hidden_state.float().cpu().numpy()
                     for j in range(len(labels)):
-                        embed_h5[labels[j]] = embed[j, :lengths[j]]
+                        embed_h5[labels[j]] = embed[j, :lengths[j]].astype(np.float16)
         embed_h5.close()
     except:
         os.system(f"rm {out_file}")

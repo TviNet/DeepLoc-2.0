@@ -9,6 +9,5 @@ fair-esm
 transformers
 pytorch_lightning
 sentencepiece 
-bio-embeddings[all]
 pickle5
 h5py
