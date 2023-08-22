@@ -4,9 +4,10 @@ dependencies:
   - pip
   - numpy
   - matplotlib
-  - pandas
+  - pandas<2.0.0
   - scipy
   - setuptools
+  - scikit-learn
   - pip:
     - Bio
     - torch

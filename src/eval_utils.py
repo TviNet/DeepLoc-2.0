@@ -1,140 +1,52 @@
-
+import os
+import tqdm
 import pandas as pd
 import numpy as np
 import pickle
-from sklearn.metrics import hamming_loss, matthews_corrcoef, confusion_matrix
-from sklearn import metrics
 import torch
 from src.utils import ModelAttributes
 from src.data import DataloaderHandler
-import os
+from src.metrics import *
 
 if torch.cuda.is_available():
-    device = "cuda" #torch.device("cuda")
+    device = "cuda"
+    dtype = torch.float16
 elif torch.backends.mps.is_available():
-    device = "cpu" #torch.device("mps")
+    device = "cpu"
+    dtype=torch.bfloat16
 else:
-    device = "cpu" #torch.device("cpu")
+    device = "cpu"
+    dtype=torch.bfloat16
 
-# taken from https://www.kaggle.com/cpmpml/optimizing-probabilities-for-best-mcc
-def mcc(tp, tn, fp, fn):
-    sup = tp * tn - fp * fn
-    inf = (tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)
-    if inf==0:
-        return 0
-    else:
-        return sup / np.sqrt(inf)
-        
-def get_best_threshold_mcc(y_true, y_prob):
-    idx = np.argsort(y_prob)
-    y_true_sort = y_true[idx]
-    n = y_true.shape[0]
-    nump = 1.0 * np.sum(y_true) # number of positive
-    numn = n - nump # number of negative
-    tp = nump
-    tn = 0.0
-    fp = numn
-    fn = 0.0
-    best_mcc = 0.0
-    best_id = -1
-    prev_proba = -1
-    best_proba = -1
-    mccs = np.zeros(n)
-    for i in range(n):
-        # all items with idx < i are predicted negative while others are predicted positive
-        # only evaluate mcc when probability changes
-        proba = y_prob[idx[i]]
-        if proba != prev_proba:
-            prev_proba = proba
-            new_mcc = mcc(tp, tn, fp, fn)
-            if new_mcc >= best_mcc:
-                best_mcc = new_mcc
-                best_id = i
-                best_proba = proba
-        mccs[i] = new_mcc
-        if y_true_sort[i] == 1:
-            tp -= 1.0
-            fn += 1.0
-        else:
-            fp -= 1.0
-            tn += 1.0
-
-    y_pred = (y_prob >= best_proba).astype(int)
-    score = matthews_corrcoef(y_true, y_pred)
-    # print(score, best_mcc)
-    # plt.plot(mccs)
-    return best_proba
-
-def get_optimal_threshold(output_df, data_df):
-    test_df = data_df.merge(output_df)
-    
-    predictions = np.stack(test_df["preds"].to_numpy())
-    actuals = np.stack(test_df["Target"].to_numpy())
-    
-    optimal_thresholds = np.zeros((11,))
-    for i in range(11):
-        fpr, tpr, thresholds = metrics.roc_curve(actuals[:, i], predictions[:, i])
-        optimal_idx = np.argmax(tpr - fpr)
-        optimal_thresholds[i] = thresholds[optimal_idx]
-
-    return optimal_thresholds
-
-def get_optimal_threshold_pr(output_df, data_df):
-    test_df = data_df.merge(output_df)
-    
-    predictions = np.stack(test_df["preds"].to_numpy())
-    actuals = np.stack(test_df["Target"].to_numpy())
-    
-    optimal_thresholds = np.zeros((11,))
-    for i in range(11):
-        pr, re, thresholds = metrics.precision_recall_curve(actuals[:, i], predictions[:, i])
-        fscores = (2 * pr * re) / (pr + re)
-        optimal_idx = np.argmax(fscores)
-        optimal_thresholds[i] = thresholds[optimal_idx]
-
-    return optimal_thresholds
-
-def get_optimal_threshold_mcc(output_df, data_df):
-    test_df = data_df.merge(output_df)
-    
-    predictions = np.stack(test_df["preds"].to_numpy())
-    actuals = np.stack(test_df["Target"].to_numpy())
-    
-    optimal_thresholds = np.zeros((11,))
-    for i in range(11):
-        optimal_thresholds[i] = get_best_threshold_mcc(actuals[:, i], predictions[:, i])
-
-    return optimal_thresholds
-
-def predict_values(dataloader, model):
+def predict_sl_values(dataloader, model):
     output_dict = {}
     annot_dict = {}
     pool_dict = {}
     with torch.no_grad():
-      for i, (toks, lengths, np_mask, targets, targets_seq, labels) in enumerate(dataloader):
-        with torch.autocast(device_type=device,dtype=torch.bfloat16):
-            y_pred, y_pool, y_attn = model.predict(toks.to("cuda"), lengths.to("cuda"), np_mask.to("cuda"))
-        x = torch.sigmoid(y_pred).cpu().numpy()
+      for i, (toks, lengths, np_mask, targets, targets_seq, labels) in tqdm.tqdm(enumerate(dataloader)):
+        with torch.autocast(device_type=device,dtype=dtype):
+            y_pred, y_pool, y_attn = model.predict(toks.to(device), lengths.to(device), np_mask.to(device))
+        x = torch.sigmoid(y_pred).float().cpu().numpy()
         for j in range(len(labels)):
             if len(labels) == 1:
                 output_dict[labels[j]] = x
-                pool_dict[labels[j]] = y_pool.cpu().numpy()
-                annot_dict[labels[j]] = y_attn[:lengths[j]].cpu().numpy()
+                pool_dict[labels[j]] = y_pool.float().cpu().numpy()
+                annot_dict[labels[j]] = y_attn[:lengths[j]].float().cpu().numpy()
             else:
                 output_dict[labels[j]] = x[j]
-                pool_dict[labels[j]] = y_pool[j].cpu().numpy()
-                annot_dict[labels[j]] = y_attn[j,:lengths[j]].cpu().numpy()
+                pool_dict[labels[j]] = y_pool[j].float().cpu().numpy()
+                annot_dict[labels[j]] = y_attn[j,:lengths[j]].float().cpu().numpy()
 
     output_df = pd.DataFrame(output_dict.items(), columns=['ACC', 'preds'])
     annot_df = pd.DataFrame(annot_dict.items(), columns=['ACC', 'pred_annot'])
     pool_df = pd.DataFrame(pool_dict.items(), columns=['ACC', 'embeds'])
     return output_df.merge(annot_df).merge(pool_df)
     
-def generate_outputs(
+def generate_sl_outputs(
         model_attrs: ModelAttributes, 
         datahandler: DataloaderHandler, 
         thresh_type="mcc", 
-        inner_i="1_layer", 
+        inner_i="1layer", 
         reuse=False):
     
     threshold_dict = {}
@@ -147,7 +59,7 @@ def generate_outputs(
         if not reuse:
             path = f"{model_attrs.save_path}/{outer_i}_{inner_i}.ckpt"
             model = model_attrs.class_type.load_from_checkpoint(path).to(device).eval()
-            pred_df = predict_values(dataloader, model)
+            pred_df = predict_sl_values(dataloader, model)
             pred_df.to_pickle(os.path.join(model_attrs.outputs_save_path, f"inner_{outer_i}_{inner_i}.pkl"))
         else:
             pred_df = pd.read_pickle(os.path.join(model_attrs.outputs_save_path, f"inner_{outer_i}_{inner_i}.pkl"))
@@ -162,10 +74,46 @@ def generate_outputs(
 
         if not reuse:
             dataloader, data_df = datahandler.get_partition_dataloader(outer_i)
-            output_df = predict_values(dataloader, model)
+            output_df = predict_sl_values(dataloader, model)
             output_df.to_pickle(os.path.join(model_attrs.outputs_save_path, f"{outer_i}_{inner_i}.pkl"))
 
-    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_sl_{thresh_type}.pkl"), "wb") as f:
-        pickle.dump(threshold_dict, f)
+    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_sl_{thresh_type}.json"), "w") as f:
+        json.dump(threshold_dict, f)
+
+def predict_ss_values(X, model):
+    y_preds = torch.sigmoid(model(torch.tensor(X).float()))
+    return y_preds.detach().cpu().numpy()
+
+def generate_ss_outputs(
+        model_attrs: ModelAttributes, 
+        datahandler: DataloaderHandler, 
+        thresh_type="mcc", 
+        inner_i="1layer", 
+        reuse=False):
+    
+    threshold_dict = {}
+    if not os.path.exists(f"{model_attrs.outputs_save_path}"):
+        os.makedirs(f"{model_attrs.outputs_save_path}")
+    y_train, y_train_preds, y_test, y_test_preds
+    for outer_i in range(5):
+        print("Generating output for ensemble model", outer_i)
+        X_train, y_train, X_test, y_test = datahandler.get_swissprot_ss_xy(model_attrs.outputs_save_path, outer_i)
+        path = f"{model_attrs.save_path}/{outer_i}_{inner_i}.ckpt"
+        model = SignalTypeMLP.load_from_checkpoint(path).to(device).eval()
+        
+        y_train_preds = predict_ss_values(X_train, model)
+        thresh = np.zeros((9,))
+        threshold_dict = {}
+        print("thresholds")
+        for type_i in range(9):
+            thresh[type_i] = get_best_threshold_mcc(y_train[:, type_i], y_train_preds[:, type_i])
+            threshold_dict[SS_CATEGORIES[type_i+1]] = thresh[type_i]
+            print(SS_CATEGORIES[type_i+1], thresh[type_i])
+        y_test_preds = predict_ss_values(X_test, model)
+        pickle.dump(y_test_preds, open(f"{model_attrs.outputs_save_path}/ss_{outer_i}.pkl", "wb"))
+
+    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_ss_mcc.json"), "w") as f:
+        json.dump(threshold_dict, f)
+
 
 

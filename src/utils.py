@@ -2,7 +2,7 @@ from src.model import *
 from src.data import DataloaderHandler
 import pickle
 from transformers import T5EncoderModel, T5Tokenizer, logging
-
+import os
 class ModelAttributes:
     def __init__(self, 
                  model_type: str,
@@ -18,6 +18,7 @@ class ModelAttributes:
         self.alphabet = alphabet
         self.embedding_file = embedding_file
         self.save_path = save_path
+        self.ss_save_path = os.path.join(self.save_path, "signaltype")
         self.outputs_save_path = outputs_save_path
         self.clip_len = clip_len
         self.embed_len = embed_len

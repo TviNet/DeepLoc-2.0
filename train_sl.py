@@ -83,8 +83,8 @@ if __name__ == "__main__":
             train_model(model_attrs, datahandler, i)
     print("Finished training subcellular localization models")
 
-    print("Using trained models to generate outputs for training data")
-    generate_outputs(model_attrs=model_attrs, datahandler=datahandler)
+    print("Using trained models to generate outputs for signal prediction training")
+    generate_sl_outputs(model_attrs=model_attrs, datahandler=datahandler)
     print("Generated outputs! Can train sorting signal prediction now")
 
 

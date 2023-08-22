@@ -1,4 +1,4 @@
-data_files/embeddings/*
+data_files/embeddings/*.h5
 models/*
 outputs/*
 src/__pycache__/*

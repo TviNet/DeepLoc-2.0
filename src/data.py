@@ -4,6 +4,7 @@ from Bio import SeqIO
 import re
 import pandas as pd
 import time 
+import os
 class FastaBatchedDatasetTorch(torch.utils.data.Dataset):
     def __init__(self, data_df):
         self.data_df = data_df
@@ -172,7 +173,7 @@ def convert_to_binary(x):
       types_binary[SS_CATEGORIES.index(c)-1] = 1
     return types_binary
 
-def get_swissprot_ss_Xy(clip_len):
+def get_swissprot_ss_Xy(save_path, fold, clip_len):
     with open(SIGNAL_DATA, "rb") as f:
         annot_df = pickle5.load(f)
     nes_exclude_list = ['Q7TPV4','P47973','P38398','P38861','Q16665','O15392','Q9Y8G3','O14746','P13350','Q06142']
@@ -186,8 +187,8 @@ def get_swissprot_ss_Xy(clip_len):
           x = x[:clip_len//2] + x[-clip_len//2:]
       return x
     
-    train_annot_pred_df = pd.DataFrame()#pd.read_pickle(f"outputs_prott5/inner_{i}_1Layer.pkl")
-    test_annot_pred_df = pd.DataFrame()#pd.read_pickle(f"outputs_prott5/{i}_1Layer.pkl")
+    train_annot_pred_df = pd.read_pickle(os.path.join(save_path, f"inner_{fold}_1Layer.pkl"))
+    test_annot_pred_df = pd.read_pickle(os.path.join(save_path, f"{fold}_1Layer.pkl"))
     assert train_annot_pred_df.merge(test_annot_pred_df, on="ACC").empty == True
 
     
@@ -214,7 +215,9 @@ def get_swissprot_ss_Xy(clip_len):
     
     X_train = np.concatenate((X_true_train, X_pred_train), axis=0)
     y_train = np.concatenate((y_true_train, y_pred_train), axis=0)
-    print(X_train.shape, X_test.shape)
+    #print(X_train.shape, X_test.shape)
+
+    return X_train, y_train, X_test, y_test
 
 
 class EmbeddingsLocalizationDataset(torch.utils.data.Dataset):
@@ -348,21 +351,24 @@ class DataloaderHandler:
         data_df = get_swissprot_df(self.clip_len)
         test_df = data_df[data_df.Partition == outer_i].reset_index(drop=True)
         
-        test_dataset = EmbeddingsLocalizationDataset(self.embedding_file, test_df)
+        embedding_file = h5py.File(self.embedding_file, "r")
+        test_dataset = EmbeddingsLocalizationDataset(embedding_file, test_df)
         test_batches = test_dataset.get_batch_indices(4096*4, BATCH_SIZE, extra_toks_per_seq=0)
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, collate_fn=TrainBatchConverter(self.alphabet), batch_sampler=test_batches)
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, collate_fn=TrainBatchConverter(self.alphabet, self.embed_len), batch_sampler=test_batches)
         return test_dataloader, test_df
 
     def get_partition_dataloader_inner(self, partition_i):
         data_df = get_swissprot_df(self.clip_len)
         test_df = data_df[data_df.Partition != partition_i].reset_index(drop=True)
-        test_dataset = EmbeddingsLocalizationDataset(self.embedding_file, test_df)
+        embedding_file = h5py.File(self.embedding_file, "r")
+        test_dataset = EmbeddingsLocalizationDataset(embedding_file, test_df)
         test_batches = test_dataset.get_batch_indices(4096*4, BATCH_SIZE, extra_toks_per_seq=0)
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, collate_fn=TrainBatchConverter(self.alphabet), batch_sampler=test_batches)
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, collate_fn=TrainBatchConverter(self.alphabet, self.embed_len), batch_sampler=test_batches)
 
         return test_dataloader, test_df
     
-    def get_sl_train_val_dataloader(self, X, y):
+    def get_ss_train_val_dataloader(self, save_path, outer_i):
+        X, y, _, _ = get_swissprot_ss_Xy(save_path, outer_i, clip_len=self.clip_len)
         sss_tt = ShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
         
         (split_train_idx, split_val_idx) = next(sss_tt.split(y))
@@ -385,6 +391,21 @@ class DataloaderHandler:
             batch_size=BATCH_SIZE)
         
         return train_dataloader, val_dataloader
+
+    def get_ss_test_dataloader(self, save_path, outer_i):
+        _, _, X, y = get_swissprot_ss_Xy(save_path, outer_i, clip_len=self.clip_len)
+        
+        print(X.shape, y.shape)
+        val_dataset = SignalTypeDataset(X, y)
+        val_dataloader = torch.utils.data.DataLoader(
+            val_dataset,
+            shuffle=False,
+            batch_size=X.shape[0])
+
+        return val_dataloader
+    
+    def get_swissprot_ss_xy(self, save_path, outer_i):
+        return get_swissprot_ss_Xy(save_path=save_path, fold=outer_i, clip_len=self.clip_len)
 
 
 
