@@ -46,17 +46,15 @@ def generate_sl_outputs(
         model_attrs: ModelAttributes, 
         datahandler: DataloaderHandler, 
         thresh_type="mcc", 
-        inner_i="1layer", 
+        inner_i="1Layer", 
         reuse=False):
     
     threshold_dict = {}
-    if not os.path.exists(f"{model_attrs.outputs_save_path}"):
-        os.makedirs(f"{model_attrs.outputs_save_path}")
         
     for outer_i in range(5):
         print("Generating output for ensemble model", outer_i)
         dataloader, data_df = datahandler.get_partition_dataloader_inner(outer_i)
-        if not reuse:
+        if not os.path.exists(os.path.join(model_attrs.outputs_save_path, f"inner_{outer_i}_{inner_i}.pkl")):
             path = f"{model_attrs.save_path}/{outer_i}_{inner_i}.ckpt"
             model = model_attrs.class_type.load_from_checkpoint(path).to(device).eval()
             pred_df = predict_sl_values(dataloader, model)
@@ -71,14 +69,14 @@ def generate_sl_outputs(
         else:
             thresholds = get_optimal_threshold_mcc(pred_df, data_df)
         threshold_dict[f"{outer_i}_{inner_i}"] = thresholds
-
-        if not reuse:
+        
+        if not os.path.exists(os.path.join(model_attrs.outputs_save_path, f"{outer_i}_{inner_i}.pkl")):
             dataloader, data_df = datahandler.get_partition_dataloader(outer_i)
             output_df = predict_sl_values(dataloader, model)
             output_df.to_pickle(os.path.join(model_attrs.outputs_save_path, f"{outer_i}_{inner_i}.pkl"))
 
-    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_sl_{thresh_type}.json"), "w") as f:
-        json.dump(threshold_dict, f)
+    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_sl_{thresh_type}.pkl"), "wb") as f:
+        pickle.dump(threshold_dict, f)
 
 def predict_ss_values(X, model):
     y_preds = torch.sigmoid(model(torch.tensor(X).float()))
@@ -88,32 +86,31 @@ def generate_ss_outputs(
         model_attrs: ModelAttributes, 
         datahandler: DataloaderHandler, 
         thresh_type="mcc", 
-        inner_i="1layer", 
+        inner_i="1Layer", 
         reuse=False):
     
     threshold_dict = {}
     if not os.path.exists(f"{model_attrs.outputs_save_path}"):
         os.makedirs(f"{model_attrs.outputs_save_path}")
-    y_train, y_train_preds, y_test, y_test_preds
     for outer_i in range(5):
         print("Generating output for ensemble model", outer_i)
         X_train, y_train, X_test, y_test = datahandler.get_swissprot_ss_xy(model_attrs.outputs_save_path, outer_i)
-        path = f"{model_attrs.save_path}/{outer_i}_{inner_i}.ckpt"
+        path = f"{model_attrs.save_path}/signaltype/{outer_i}.ckpt"
         model = SignalTypeMLP.load_from_checkpoint(path).to(device).eval()
         
         y_train_preds = predict_ss_values(X_train, model)
         thresh = np.zeros((9,))
         threshold_dict = {}
-        print("thresholds")
+        #print("thresholds")
         for type_i in range(9):
             thresh[type_i] = get_best_threshold_mcc(y_train[:, type_i], y_train_preds[:, type_i])
             threshold_dict[SS_CATEGORIES[type_i+1]] = thresh[type_i]
-            print(SS_CATEGORIES[type_i+1], thresh[type_i])
+            #print(SS_CATEGORIES[type_i+1], thresh[type_i])
         y_test_preds = predict_ss_values(X_test, model)
         pickle.dump(y_test_preds, open(f"{model_attrs.outputs_save_path}/ss_{outer_i}.pkl", "wb"))
 
-    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_ss_mcc.json"), "w") as f:
-        json.dump(threshold_dict, f)
+    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_ss_mcc.pkl"), "wb") as f:
+        pickle.dump(threshold_dict, f)
 
 
 

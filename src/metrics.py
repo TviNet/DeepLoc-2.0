@@ -173,9 +173,9 @@ def calculate_ss_metrics_fold(y_test, y_test_preds, thresh):
     return metrics_dict
 
 def calculate_ss_metrics(model_attrs: ModelAttributes, datahandler: DataloaderHandler, thresh_type="mcc"):
-    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_ss_{thresh_type}.json"), "r") as f:
-        threshold_dict = json.load(f)
-    print(np.array(list(threshold_dict.values())).mean(0))
+    with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_ss_{thresh_type}.pkl"), "rb") as f:
+        threshold_dict = pickle.load(f)
+    # print(np.array(list(threshold_dict.values())).mean(0))
     metrics_dict_list = {}
     thresh = np.array([threshold_dict[k] for k in SS_CATEGORIES[1:]])
     

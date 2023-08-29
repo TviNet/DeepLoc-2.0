@@ -69,7 +69,8 @@ if __name__ == "__main__":
     print("Training sorting signal type prediction models")
     for i in range(0, 5):
         print(f"Training model {i+1} / 5")
-        train_model(model_attrs, datahandler, i)
+        if not os.path.exists(os.path.join(model_attrs.save_path, f"signaltype/{i}.ckpt")):
+            train_model(model_attrs, datahandler, i)
     
     print("Finished training sorting signal type prediction models")
 

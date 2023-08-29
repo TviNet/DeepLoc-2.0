@@ -18,8 +18,16 @@ class ModelAttributes:
         self.alphabet = alphabet
         self.embedding_file = embedding_file
         self.save_path = save_path
+        if not os.path.exists(f"{self.save_path}"):
+            os.makedirs(f"{self.save_path}")
         self.ss_save_path = os.path.join(self.save_path, "signaltype")
+        if not os.path.exists(f"{self.ss_save_path}"):
+            os.makedirs(f"{self.ss_save_path}")
+
         self.outputs_save_path = outputs_save_path
+
+        if not os.path.exists(f"{outputs_save_path}"):
+            os.makedirs(f"{outputs_save_path}")
         self.clip_len = clip_len
         self.embed_len = embed_len
         

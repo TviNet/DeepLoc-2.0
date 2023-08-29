@@ -172,21 +172,14 @@ class SignalTypeMLP(pl.LightningModule):
         x, y = batch
         y_pred = self.forward(x)
         loss = nn.BCEWithLogitsLoss(pos_weight=pos_weights_annot.to(y_pred.device))(y_pred, y)
-        self.log('train_loss_batch', loss)
+        self.log('train_loss_batch', loss, on_epoch=True)
         return {'loss': loss}
-
-    def on_train_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
-        self.log('train_loss', avg_loss, prog_bar=True)
 
     def validation_step(self, batch, batch_idx):
         #self.freeze()
         x, y = batch
         y_pred = self.forward(x)
         loss = nn.BCEWithLogitsLoss(pos_weight=pos_weights_annot.to(y_pred.device))(y_pred, y)
-        self.log('val_loss_batch', loss)
+        self.log('val_loss', loss, on_epoch=True)
         return {'loss': loss}
   
-    def on_val_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
-        self.log('val_loss', avg_loss, prog_bar=True)
