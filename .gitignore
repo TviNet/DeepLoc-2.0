@@ -1,5 +1,5 @@
 data_files/embeddings/*.h5
-models/*
+models/models_*
 outputs/*
 src/__pycache__/*
 
