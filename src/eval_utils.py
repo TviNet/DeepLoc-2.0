@@ -79,7 +79,8 @@ def generate_sl_outputs(
         pickle.dump(threshold_dict, f)
 
 def predict_ss_values(X, model):
-    y_preds = torch.sigmoid(model(torch.tensor(X).float()))
+    X_tensor = torch.tensor(X, device=device).float()
+    y_preds = torch.sigmoid(model(X_tensor))
     return y_preds.detach().cpu().numpy()
 
 def generate_ss_outputs(
@@ -111,6 +112,3 @@ def generate_ss_outputs(
 
     with open(os.path.join(model_attrs.outputs_save_path, f"thresholds_ss_mcc.pkl"), "wb") as f:
         pickle.dump(threshold_dict, f)
-
-
-
